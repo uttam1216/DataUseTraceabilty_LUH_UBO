@@ -117,9 +117,9 @@ def prepare_output_trip_file(input_file_path, output_file_path, watermarked_df):
     with open(input_file_path, 'r') as f:
         trips_data_dict_original = json.load(f)
     lst_lst_coords = watermarked_df[['watermarked_lat', 'watermarked_long']].values.tolist()
-    for i in range(len(trips_data_dict_original[0]['data'])):
-        if trips_data_dict_original[0]['data'][i]['metric_id'] == '6587929f-e425-498b-b450-aa615851400b':
-            trips_data_dict_original[0]['data'][i]['values'] = lst_lst_coords
+    for i in range(len(trips_data_dict_original['data'])):
+        if trips_data_dict_original['data'][i]['metric_id'] == '6587929f-e425-498b-b450-aa615851400b':
+            trips_data_dict_original['data'][i]['values'] = lst_lst_coords
     f.close()
     # writing the updated dict to a new output file which will now have watermarked coordinates
     watermarked_file = open(output_file_path, "w")

@@ -20,6 +20,7 @@ from src.traceability_module.re_identification_age_trace import AGE_Trace_reiden
 from src.traceability_module.watermark_trip import Watermark_Trajectory
 from src.traceability_module.check_watermark_correlation import Watermarking_Correlation
 import json
+import glob
 from waitress import serve
 
 app = Flask(__name__)
@@ -109,11 +110,12 @@ class AGETraceRepresentationSchema(Schema):
 
 # defining class with input descriptions for fetching input data for watermarking
 class WTraceWatermarkingSchema(Schema):
+    consent_id = fields.String(required=True, description="Consent id of the data.")
     trip_data = fields.Dict(required=True, description="Data with trip details: [dict]")
-
 
 # defining class with input descriptions for fetching input watermarked trajectory data for checking correlation
 class WTraceCheckCorrelationSchema(Schema):
+    consent_id = fields.String(required=False, description="Consent against which correlation needs to be checked")
     watermarked_trip_data = fields.Dict(required=True, description="Data with watermarked trip details: [dict]")
 
 
@@ -459,18 +461,20 @@ class Watermark_Trip(MethodResource, Resource):
             # Extract data from JSON
             json_body = request.get_json()
             trip_data = json_body['trip_data']
+            consent_id = json_body['consent_id']
 
             # Initialize W-Trace watermarking Model
             w_trace_model = Watermark_Trajectory()
-            watermarked_response = w_trace_model.watermark_trajectory(trip_data)
+            watermarked_response = w_trace_model.watermark_trajectory(trip_data, consent_id)
 
             # return {'result': watermarked_response.to_json()}, 200
             # return {'result': watermarked_response[0]}, 200
-            return watermarked_response[0], 200
+            return watermarked_response, 200
         except Exception as e:
             return {"ERROR": str(e)}, 500
 
 
+'''
 class Watermarked_Correlation(MethodResource, Resource):
     @doc(description='Data Provider can check whether a trajectory is a modified Version of a Trajectory in his Data.',
          tags=['Re-Identification'],
@@ -488,6 +492,51 @@ class Watermarked_Correlation(MethodResource, Resource):
             correlation = w_trace_correlation.get_watermark_correlation(watermarked_trip_data)
 
             return {'correlation': correlation}, 200
+        except Exception as e:
+            return {"ERROR": str(e)}, 500
+'''
+
+class Watermarked_Correlation(MethodResource, Resource):
+    @doc(description='Data Provider can check whether a trajectory is a modified Version of a Trajectory in his Data.',
+         tags=['Re-Identification'],
+         responses={'200': {'description': 'Possible correlation(s) found successfully'},
+                    '500': {'description': 'Internal Server Error'}})
+    @use_kwargs(WTraceCheckCorrelationSchema, location='json', required=True)
+    def post(self, **kwargs):
+        try:
+            # Extract data from JSON
+            json_body = request.get_json()
+            watermarked_trip_data = json_body['watermarked_trip_data']
+            consent_id = json_body['consent_id']
+
+            # Initialize checking of correlation model
+            w_trace_correlation = Watermarking_Correlation()
+            trip_id = watermarked_trip_data['trip_id']
+            if consent_id != '' and trip_id != '':
+                # load watermarking extracts i.e. x1_fill of that trajectory
+                x1_full = np.load(
+                    'wtrace_data/intermediate_files/extract_files/' + consent_id + '_c$t_' + trip_id + '_x1_full.npy',
+                    allow_pickle=True)
+                # load watermark file
+                watermark = np.load(
+                    'wtrace_data/intermediate_files/watermark_files/' + consent_id + '_c$t_' + trip_id + '_watermark.npy')
+                correlation = w_trace_correlation.get_watermark_correlation(watermarked_trip_data, x1_full, watermark)
+                res = {'consent_id': consent_id, 'correlation': correlation}
+            else:
+                # loop through all watermark secret files, finding correlation with each and then present correlation
+                res = []
+                for fin in glob.glob('wtrace_data/intermediate_files/extract_files/*'):
+                    # print('reading file...')
+                    sub_res = {}
+                    x1_full = np.load(fin, allow_pickle=True)
+                    watermark_file_name = fin.replace('extract_files', 'watermark_files').replace('_x1_full.npy', '_watermark.npy')
+                    watermark = np.load(watermark_file_name, allow_pickle=True)
+                    correlation = w_trace_correlation.get_watermark_correlation(watermarked_trip_data, x1_full,
+                                                                                watermark)
+                    sub_res['consent_id'] = str(fin.split('_c$t_')[0]).split('/')[-1]
+                    sub_res['correlation'] = correlation
+                    res.append(sub_res)
+            return res, 200
         except Exception as e:
             return {"ERROR": str(e)}, 500
 

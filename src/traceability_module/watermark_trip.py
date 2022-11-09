@@ -1,4 +1,5 @@
 from src.traceability_module.W_Trace_model import *
+from requests import post
 import argparse
 
 # locating all wtrace related files
@@ -13,8 +14,14 @@ class Watermark_Trajectory:
         None
 
     # function to extract trip lat long from the raw input file
-    def get_trip_lat_long(self, trips_data_dict):
+    def get_trip_lat_long(self, trips_data_dict, consent_id):
         trip_id = trips_data_dict['trip_id']
+        try:
+            with open(wtrace_data_path + '/input_files/' + consent_id + '_c$t_' + trip_id + '.json', 'w') as fp:
+                json.dump(trips_data_dict, fp, indent=10)
+                print('Input file saved successfully')
+        except Exception as ex:
+            print(ex)
         lst_trip_id, lst_trip_coords, lst_trip_timestamps = [], [], []
         lst_trip_id.append(trips_data_dict['trip_id'])
         trip_data_dict = trips_data_dict['data']
@@ -32,15 +39,15 @@ class Watermark_Trajectory:
         trip_df['trip_id'] = lst_trip_id[0]
         # saving only the coordinates data along with timestamp and trip_id
         # saving the trip file in form of dataframe
-        trip_df.to_csv(wtrace_data_path + '/intermediate_files/' + trip_id + '_lat_long.csv', index=False)
+        trip_df.to_csv(wtrace_data_path + '/intermediate_files/' + consent_id + '_c$t_' + trip_id + '_lat_long.csv', index=False)
 
         return trip_df
 
     # function to save watermarked df and its related statistics
-    def save_watermarked_df(self, watermarked_df, trip_id, cnt_slices, corr_watermark_last, watermark_full,
+    def save_watermarked_df(self, watermarked_df, trip_id, consent_id, cnt_slices, corr_watermark_last, watermark_full,
                             extracted_watermark_full):
         watermarked_df = watermarked_df.reset_index(drop=True)
-        watermarked_df.to_csv(wtrace_data_path + '/intermediate_files/' + trip_id + '_watermarkedTraj.csv', index=False)
+        watermarked_df.to_csv(wtrace_data_path + '/intermediate_files/' + consent_id + '_c$t_' + trip_id + '_watermarkedTraj.csv', index=False)
         corr_watermark = ncc(np.array(watermark_full[:cnt_slices]), np.array(extracted_watermark_full[:cnt_slices]))
         final_corr = (corr_watermark * cnt_slices + corr_watermark_last) / (cnt_slices + 1)
         avg = watermarked_df["dist"].mean()
@@ -84,8 +91,8 @@ class Watermark_Trajectory:
         plt.show()
 
     # function to watermark the original trajectory
-    def watermark_trajectory(self, trips_data_dict):
-        trip_df = self.get_trip_lat_long(trips_data_dict)
+    def watermark_trajectory(self, trips_data_dict, consent_id=None):
+        trip_df = self.get_trip_lat_long(trips_data_dict, consent_id)
         filterdata = trip_df.reset_index(drop=True)
         trip_idSeries = filterdata['trip_id'].unique()
         trip_id = trip_idSeries[0]
@@ -104,8 +111,16 @@ class Watermark_Trajectory:
                 needed_pad = len(df_1) - len(watermark)
                 watermark = np.append(watermark, [0 for i in range(needed_pad)])
             np.random.shuffle(watermark)
-            np.save(wtrace_data_path + '/intermediate_files/' + trip_id + '_watermark.npy',
-                    watermark)  # saving the watermark file
+            np.save(wtrace_data_path + '/intermediate_files/watermark_files/' + consent_id + '_c$t_' + trip_id + '_watermark.npy', watermark)  # saving watermark file locally
+            # start of change done on 4th Nov by Uttam to send watermarking secret file to central manager component
+            y = open(wtrace_data_path + '/intermediate_files/watermark_files/' + consent_id + '_c$t_' + trip_id + '_watermark.npy', 'rb')
+            files = {'file': y}
+            from requests import post
+            temp_url = 'http://localhost:5002'
+            x = post(url=f'{temp_url}/wm_file', files=files).json()
+            # end of change done on 4th Nov by Uttam to send watermarking secret file to central manager component
+
+
             pd.options.mode.chained_assignment = None
             appended_data, watermark_full, extracted_watermark_full, x1_full = [], [], [], []
             for i in range(cnt_slices):
@@ -141,26 +156,31 @@ class Watermark_Trajectory:
 
             # after all rows get processed, save the watermarked df and its related statistics
             watermarked_df = pd.concat(appended_data)
-            self.save_watermarked_df(watermarked_df, trip_id, cnt_slices, corr_watermark_last, watermark_full,
+            self.save_watermarked_df(watermarked_df, trip_id, consent_id, cnt_slices, corr_watermark_last, watermark_full,
                                      extracted_watermark_full)
 
         elapsed_time_fl = (time.time() - start)
         print('\n Time taken to do the watermarking in seconds: ', round(elapsed_time_fl, 2))
 
         # saving original extract of lat,long's fft for later to find correlation of watermarked trajectory wrt original
-        np.save(wtrace_data_path + '/intermediate_files/' + trip_id + '_x1_full.npy', x1_full)
+        np.save(wtrace_data_path + '/intermediate_files/extract_files/' + consent_id + '_c$t_' + trip_id + '_x1_full.npy', x1_full)
+        y = open(wtrace_data_path + '/intermediate_files/extract_files/' + consent_id + '_c$t_' + trip_id + '_x1_full.npy', 'rb')
+        files = {'file': y}
+        # following url to be changed to point central server once deployment of manager component is done on it
+        temp_url = 'http://localhost:5002'
+        x = post(url=f'{temp_url}/wm_file', files=files).json()
 
         # write back the watermarked trajectory to original input file format
-        prepare_output_trip_file(wtrace_data_path + '/input_files/' + trip_id + '.json',
-                                 wtrace_data_path + '/output_files/output_of_' + trip_id + '.json', watermarked_df)
+        prepare_output_trip_file(wtrace_data_path + '/input_files/' + consent_id + '_c$t_' + trip_id + '.json',
+                                 wtrace_data_path + '/output_files/output_of_' + consent_id + '_c$t_' + trip_id + '.json', watermarked_df)
         try:
-            with open(wtrace_data_path + '/output_files/output_of_' + trip_id + '.json', 'r') as f:
+            with open(wtrace_data_path + '/output_files/output_of_' + consent_id + '_c$t_' + trip_id + '.json', 'r') as f:
                  watermarked_response = json.load(f)
         except:
             watermarked_response = None
 
         # saving the original vs watermarked trajectories image
-        path_to_trajectories_image = wtrace_data_path + '/intermediate_files/' + trip_id + '_orig_vs_wat_traj.png'
+        path_to_trajectories_image = wtrace_data_path + '/intermediate_files/' + consent_id + '_c$t_' + trip_id + '_orig_vs_wat_traj.png'
         self.save_trajectories(watermarked_df, path_to_trajectories_image)
         return watermarked_response
 

@@ -230,9 +230,9 @@ There is a separate class for digital signature, which is constructed based on a
 * __Verify Signature__: takes in input a signature, and a data hash verifies whether the signature corresponds to the data hash or not. It returns True if the signature is valid and False otherwise.
 There is also a static function __Get Hash__ used to hash any kind of data and returns it.
 
-### 4. Temporary Database 
+### 4. Database 
 
-For completeness in the implementation, we prepared a temporary database using CSV files and special directories in the local system.
+PostgreSQL database is used to store the required data.
 
 #### a) Keys
 

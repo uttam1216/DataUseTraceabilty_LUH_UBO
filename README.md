@@ -232,7 +232,7 @@ There is also a static function __Get Hash__ used to hash any kind of data and r
 
 ### 4. Database 
 
-PostgreSQL database is used to store the required data.
+By default PostgreSQL database is used to store the required data. As an alternative, csv files can also be used throughout for storage by enabling flag_transact_with_db = False in utils/utils.py
 
 #### a) Keys
 
